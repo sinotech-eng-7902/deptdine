@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>正在前往部門聚餐調查系統</title>
+<script>
+(function(){
+  var hash=location.hash||'';
+  if(hash==='#admin'||hash.indexOf('#admin/')===0)hash='#manage'+hash.slice(6);
+  else if(!hash||hash==='#')hash='#manage';
+  location.replace('../manage/'+location.search+hash);
+})();
+</script>
+</head>
+<body>
+<p>正在前往新的管理頁面…</p>
+</body>
+</html>
