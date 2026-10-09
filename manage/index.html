@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>部門聚餐調查系統 v10.55｜活動管理員新增與權限核對版</title>
+<script>if(/^#(?:manage|admin)(?:\/|$)/.test(location.hash))document.documentElement.dataset.adminBoot='pending';</script>
+<style>
+html[data-admin-boot="pending"] #front.wrap{display:block!important}
+html[data-admin-boot="pending"] #frontContent,html[data-admin-boot="pending"] #admin,html[data-admin-boot="pending"] #loginMask{display:none!important}
+html[data-admin-boot="pending"] #frontLoading{display:block!important}
+</style>
+  <title>部門聚餐調查系統 v10.56｜後台重新整理載入修正版</title>
   <script src="../assets/runtime-status-56e9198a.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -14,15 +20,15 @@
 </head>
 <body>
 <div id="root"></div>
-<script src="../assets/manage-shell-24cf3312.js"></script>
+<script src="../assets/manage-shell-cc5f92fe.js"></script>
 <script>
 if(location.hash==='#admin'||location.hash.startsWith('#admin/'))history.replaceState(null,'','#manage'+location.hash.slice(6));
 if(!location.hash.startsWith('#manage'))history.replaceState(null,'','#manage');
 </script>
 <script src="../assets/firebase-config-b84a61e4.js"></script>
-<script src="../assets/admin-navigation-tools-23e3454f.js"></script>
-<script src="../assets/admin-core-fc8839c6.js"></script>
-<script src="../assets/admin-audit-dates-db2b9026.js"></script>
+<script src="../assets/admin-navigation-tools-6cfff2f2.js"></script>
+<script src="../assets/admin-core-415987c9.js"></script>
+<script src="../assets/admin-audit-dates-cf1afea5.js"></script>
 <script src="../assets/admin-mail-d36982a5.js"></script>
 <script src="../assets/admin-results-94529405.js"></script>
 <script src="../assets/admin-chat-cacd3f22.js"></script>
@@ -35,10 +41,10 @@ if(!location.hash.startsWith('#manage'))history.replaceState(null,'','#manage');
 <script src="../assets/admin-feature-settings-bd13abdd.js"></script>
 <script src="../assets/admin-survey-ui-6dd7b041.js"></script>
 <script src="../assets/admin-restaurant-ui-9e54e8de.js"></script>
-<script src="../assets/admin-editor-tools-6c89e6a9.js"></script>
+<script src="../assets/admin-editor-tools-8f90dc46.js"></script>
 <script src="../assets/qrcode-14101379.js"></script>
-<script src="../assets/admin-page-tools-103554f1.js"></script>
+<script src="../assets/admin-page-tools-c7a394ea.js"></script>
 <script src="../assets/jszip-75aace99.js"></script>
-<script src="../assets/admin-workflow-tools-33db2a96.js"></script>
+<script src="../assets/admin-workflow-tools-07413772.js"></script>
 </body>
 </html>
