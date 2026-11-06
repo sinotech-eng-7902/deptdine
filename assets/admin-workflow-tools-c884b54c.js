@@ -1,0 +1,1191 @@
+/* admin-reimbursement-0807052-2b57e31d.js */
+/* 0807052 部門聯誼餐費申請單：由最終決議自動產生 Word。 */
+(function installReimbursement0807052(){
+  const VERSION='10.62';
+  const TEMPLATE_URL='../assets/0807052-template.docx';
+  const MAX_ATTENDEES=50;
+  let reimbursementAttendees0807052=[];
+  let reimbursementProcessReturnFocus0807052=null;
+
+  function escHtml0807052(v){
+    return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function currentMember0807052(){
+    try{
+      const email=String(currentUser?.email||'').trim().toLowerCase();
+      if(!email)return null;
+      if(typeof findMemberByGoogleEmail==='function')return findMemberByGoogleEmail(email);
+      return (D.members||[]).find(m=>String(m.googleEmail||m.email||'').trim().toLowerCase()===email)||null;
+    }catch(_){return null}
+  }
+  function finalDateData0807052(){return (D.dates||[]).find(d=>d.id===D.final?.finalDateId)||null}
+  function finalRestaurant0807052(){return (D.restaurants||[]).find(r=>r.id===D.final?.finalRestaurantId)||null}
+  function finalRows0807052(){
+    const dateId=D.final?.finalDateId||'';
+    if(!dateId)return [];
+    if(typeof window.finalAttendanceRowsV782==='function'){
+      return window.finalAttendanceRowsV782(dateId).map(row=>({
+        memberId:row.member?.memberId||'',
+        department:row.member?.department||row.member?.departmentName||'',
+        employeeNo:row.member?.employeeNo||row.member?.empNo||'',
+        name:row.member?.name||row.member?.memberName||'',
+        source:row.source||'',
+        budgetEligible:typeof memberBudgetEligible==='function'?memberBudgetEligible(typeof memberById==='function'?memberById(row.member?.memberId):row.member):true
+      }));
+    }
+    if(typeof attendeeResponsesForDate==='function'){
+      return attendeeResponsesForDate(dateId).map(r=>({memberId:r.memberId||'',department:r.departmentName||'',employeeNo:r.employeeNo||'',name:r.memberName||'',source:'問卷填寫',budgetEligible:typeof responseBudgetEligible==='function'?responseBudgetEligible(r):true}));
+    }
+    return [];
+  }
+  function budgetDefault0807052(){
+    const rows=finalRows0807052();
+    const perPerson=typeof activityBudgetPerPerson==='function'?activityBudgetPerPerson():null;
+    const budgetCount=rows.filter(row=>row.budgetEligible!==false).length;
+    const total=D.final?.finalDateId&&perPerson!==null&&perPerson!==undefined?perPerson*budgetCount:null;
+    return {perPerson,budgetCount,total};
+  }
+  function moneyText0807052(value){
+    const amount=Number(value);
+    return Number.isFinite(amount)?new Intl.NumberFormat('zh-TW',{maximumFractionDigits:2}).format(amount):'';
+  }
+  function rocYearFromSurvey0807052(){
+    const title=String((typeof activeSurvey==='function'?activeSurvey()?.title:'')||'');
+    const m=title.match(/(?:^|\D)(1\d{2})(?:年|\D)/);
+    if(m){const roc=Number(m[1]);if(roc>=100&&roc<=199)return roc}
+    return new Date().getFullYear()-1911;
+  }
+  function inferDate0807052(){
+    const label=String(finalDateData0807052()?.label||'');
+    let y,m,d;
+    let hit=label.match(/(20\d{2})\s*[\/.-年]\s*(\d{1,2})\s*[\/.-月]\s*(\d{1,2})/);
+    if(hit){y=Number(hit[1]);m=Number(hit[2]);d=Number(hit[3])}
+    if(!y){
+      hit=label.match(/(1\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})/);
+      if(hit){y=Number(hit[1])+1911;m=Number(hit[2]);d=Number(hit[3])}
+    }
+    if(!y){
+      hit=label.match(/(?:^|\D)(\d{1,2})\s*[\/月.-]\s*(\d{1,2})(?:\s*日|\D|$)/);
+      if(hit){y=rocYearFromSurvey0807052()+1911;m=Number(hit[1]);d=Number(hit[2])}
+    }
+    if(y&&m&&d){
+      const dt=new Date(y,m-1,d);
+      if(dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d)return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+    return '';
+  }
+  function initialCounts0807052(rows){
+    const env=rows.filter(r=>String(r.department||'').includes('環工部')).length;
+    return {hq:Math.max(0,rows.length-env),field:0,env,total:rows.length};
+  }
+  function participatingDepartments0807052(){
+    const survey=typeof activeSurvey==='function'?activeSurvey():null;
+    const configured=Array.isArray(survey?.targetDepartments)?survey.targetDepartments.map(v=>String(v||'').trim()).filter(Boolean):[];
+    const inferred=typeof targetMembers==='function'?[...new Set(targetMembers().map(m=>String(m.department||m.departmentName||'').trim()).filter(Boolean))]:[];
+    return (configured.length?configured:inferred).join('、');
+  }
+  function reimbursementData0807052(){return D.final?.reimbursement0807052||D.final?.reimbursement||{}}
+  function normalizeAttendee0807052(row){
+    return {department:String(row?.department||row?.departmentName||''),employeeNo:String(row?.employeeNo||row?.empNo||''),name:String(row?.name||row?.memberName||''),source:String(row?.source||'核銷名單')};
+  }
+  function attendeeKey0807052(row){return `${String(row?.employeeNo||'').trim()}|${String(row?.name||'').trim()}`}
+  function val0807052(id){return document.getElementById(id)?.value?.trim?.()||''}
+  function num0807052(id){const n=Number(val0807052(id)||0);return Number.isFinite(n)&&n>=0?Math.floor(n):0}
+  function selectedPayerMember0807052(){
+    const emp=val0807052('r080PayerEmp');
+    return (D.members||[]).find(m=>String(m.employeeNo||m.empNo||'')===emp)||null;
+  }
+  function syncPayer0807052(){
+    const m=selectedPayerMember0807052();
+    if(m){const el=document.getElementById('r080PayerName');if(el)el.value=m.name||''}
+  }
+  function syncTotal0807052(){
+    const total=num0807052('r080HqCount')+num0807052('r080FieldCount')+num0807052('r080EnvCount');
+    const finalCount=reimbursementAttendees0807052.length,matched=total===finalCount;
+    const totalInput=document.getElementById('r080TotalCount');
+    if(totalInput)totalInput.value=total;
+    const el=document.getElementById('r080CountWarning');
+    if(el){
+      el.hidden=matched;
+      el.innerHTML=matched?'':`<span class="reimbursementCountState0807052 isMismatch">人數不一致，請確認分類人數 ${total} 人與申請單出席名單 ${finalCount} 人。</span>`;
+    }
+  }
+  function buildPayerOptions0807052(selectedEmp){
+    const members=(D.members||[]).filter(m=>m.active!==false).slice().sort((a,b)=>String(a.department||'').localeCompare(String(b.department||''),'zh-Hant')||String(a.employeeNo||'').localeCompare(String(b.employeeNo||''),'zh-Hant',{numeric:true}));
+    return '<option value="">請選擇代墊付款人</option>'+members.map(m=>{const emp=String(m.employeeNo||m.empNo||'');return `<option value="${escHtml0807052(emp)}" ${emp===selectedEmp?'selected':''}>${escHtml0807052((m.department||'')+'｜'+(m.name||'')+'｜'+emp)}</option>`}).join('');
+  }
+  function buildAttendeeOptions0807052(){
+    const selected=new Set(reimbursementAttendees0807052.map(attendeeKey0807052));
+    const members=(D.members||[]).filter(m=>m.active!==false&&!selected.has(attendeeKey0807052(m))).slice().sort((a,b)=>String(a.department||a.departmentName||'').localeCompare(String(b.department||b.departmentName||''),'zh-Hant')||String(a.employeeNo||a.empNo||'').localeCompare(String(b.employeeNo||b.empNo||''),'zh-Hant',{numeric:true}));
+    return '<option value="">請選擇要加入的人員</option>'+members.map(m=>{const emp=String(m.employeeNo||m.empNo||'');return `<option value="${escHtml0807052(emp)}">${escHtml0807052((m.department||m.departmentName||'')+'｜'+(m.name||'')+'｜'+emp)}</option>`}).join('');
+  }
+  function renderAttendees0807052(){
+    const box=document.getElementById('r080AttendeeManager');if(!box)return;
+    const rows=reimbursementAttendees0807052;
+    box.innerHTML=`<div class="reimbursementAttendeeToolbar0807052"><div><h5>申請單出席名單 <span>${rows.length} 人</span></h5><p>只影響本次 0807052 Word，不會修改問卷、統計或最終決議。</p></div><button class="btn" type="button" onclick="resetReimbursementAttendees0807052()">重設為最終名單</button></div><div class="reimbursementAttendeeAdd0807052"><label><span class="reimbursementFieldLabel0807052">新增人員</span><select id="r080AttendeeAdd">${buildAttendeeOptions0807052()}</select></label><button class="btn" type="button" onclick="addReimbursementAttendee0807052()">加入名單</button></div><div class="reimbursementAttendeeTableWrap0807052"><table class="reimbursementAttendeeTable0807052"><thead><tr><th>部門</th><th>姓名</th><th>員編</th><th>操作</th></tr></thead><tbody>${rows.length?rows.map((row,index)=>`<tr><td>${escHtml0807052(row.department||'—')}</td><td><b>${escHtml0807052(row.name||'—')}</b></td><td>${escHtml0807052(row.employeeNo||'—')}</td><td><button class="btn red" type="button" onclick="removeReimbursementAttendee0807052(${index})">移除</button></td></tr>`).join(''):'<tr><td colspan="4" class="reimbursementAttendeeEmpty0807052">目前沒有申請單出席人員，請由上方加入。</td></tr>'}</tbody></table></div>`;
+    const download=document.getElementById('r080DownloadBtn');if(download)download.disabled=!D.final?.finalDateId||!D.final?.finalRestaurantId||rows.length===0||rows.length>MAX_ATTENDEES;
+  }
+  function addReimbursementAttendee0807052(){
+    const emp=val0807052('r080AttendeeAdd');if(!emp)return;
+    const member=(D.members||[]).find(m=>String(m.employeeNo||m.empNo||'')===emp);if(!member)return;
+    const row=normalizeAttendee0807052(member);if(!reimbursementAttendees0807052.some(item=>attendeeKey0807052(item)===attendeeKey0807052(row)))reimbursementAttendees0807052.push(row);
+    renderAttendees0807052();syncTotal0807052();
+  }
+  function removeReimbursementAttendee0807052(index){
+    reimbursementAttendees0807052.splice(Number(index),1);renderAttendees0807052();syncTotal0807052();
+  }
+  function resetReimbursementAttendees0807052(){
+    reimbursementAttendees0807052=finalRows0807052().map(normalizeAttendee0807052);renderAttendees0807052();syncTotal0807052();
+  }
+  function ensureSection0807052(){
+    const mount=document.getElementById('reimbursementContent0807052');
+    if(!mount)return null;
+    let box=document.getElementById('reimbursement0807052');
+    if(box)return box;
+    box=document.createElement('section');
+    box.id='reimbursement0807052';
+    box.className='reimbursement0807052';
+    mount.appendChild(box);
+    return box;
+  }
+  function renderDecisionSummary0807052(){
+    const mount=document.getElementById('reimbursementDecisionSummary0807052');if(!mount)return;
+    const date=finalDateData0807052(),rest=finalRestaurant0807052(),rows=finalRows0807052();
+    const complete=Boolean(D.final?.finalDateId&&D.final?.finalRestaurantId);
+    mount.innerHTML=complete?`<section class="reimbursementDecision0807052"><div><span>最終日期</span><b>${escHtml0807052(date?.label||'—')}</b></div><div><span>最終餐廳</span><b>${escHtml0807052(rest?.name||'—')}</b></div><div><span>最終出席</span><b>${rows.length} 人</b></div><span class="badge green">決議資料已就緒</span></section>`:`<section class="reimbursementEmpty0807052"><div><b>尚未完成最終決議</b><p>請先選定並儲存最終日期與最終餐廳，再回到核銷作業產生申請單。</p></div><button class="btn primary" type="button" onclick="panel('finalP',document.querySelector('[onclick*=finalP]'))">前往最終決議</button></section>`;
+  }
+  function renderReimbursement0807052(){
+    renderDecisionSummary0807052();
+    const box=ensureSection0807052();if(!box)return;
+    if(typeof canManage==='function'&&!canManage()){box.hidden=true;return}
+    box.hidden=false;
+    const rows=finalRows0807052(),saved=reimbursementData0807052(),me=currentMember0807052(),counts=initialCounts0807052(rows),budget=budgetDefault0807052();
+    reimbursementAttendees0807052=(Array.isArray(saved.attendees0807052)?saved.attendees0807052:rows).map(normalizeAttendee0807052);
+    const dateValue=saved.diningDate||inferDate0807052();
+    const rest=finalRestaurant0807052();
+    const applicantEmp=saved.applicantEmployeeNo||me?.employeeNo||me?.empNo||'';
+    const defaultPhone=applicantEmp?`0${String(applicantEmp).replace(/^0+/, '')}`:'';
+    const applicantName=saved.applicantName||me?.name||currentUser?.displayName||'';
+    const unitDept=participatingDepartments0807052()||saved.unitDepartment||me?.department||me?.departmentName||'';
+    const payerEmp=saved.payerEmployeeNo||'';
+    const payerName=saved.payerName||'';
+    const savedAmountExists=Object.prototype.hasOwnProperty.call(saved,'amount');
+    const amountValue=savedAmountExists?saved.amount:(budget.total??'');
+    const amountHint=budget.perPerson===null||budget.perPerson===undefined
+      ?'尚未設定每人預算，請先至活動設定確認每人預算。'
+      :!D.final?.finalDateId
+        ?'完成最終日期與出席名單後，系統會自動計算預設核銷金額。'
+        :`系統預設：每人預算 ${moneyText0807052(budget.perPerson)} 元 × 預算人數 ${budget.budgetCount} 人 ＝ ${moneyText0807052(budget.total)} 元；可依實際核銷情形調整。`;
+    box.innerHTML=`
+      <div class="reimbursementHead0807052">
+        <div><span class="reimbursementEyebrow0807052">REIMBURSEMENT</span><h3>部門聯誼餐費申請單</h3><p>系統已帶入最終決議資料，請依序確認承辦、人數與付款資訊。</p></div>
+        <span class="reimbursementBadge0807052">08.07.052｜版次 1.1</span>
+      </div>
+      <section class="reimbursementSection0807052">
+        <div class="reimbursementSectionHead0807052"><span>1</span><div><h4>承辦資料</h4><p>確認申請單上的承辦人與核銷單位。</p></div></div>
+        <div class="reimbursementGrid0807052 reimbursementGridBasic0807052">
+          <label><span class="reimbursementFieldLabel0807052">承辦人員編 <span class="required">*</span></span><input id="r080ApplicantEmp" value="${escHtml0807052(applicantEmp)}" placeholder="例如：7902"></label>
+          <label><span class="reimbursementFieldLabel0807052">承辦人姓名 <span class="required">*</span></span><input id="r080ApplicantName" value="${escHtml0807052(applicantName)}" placeholder="請輸入姓名"></label>
+          <label><span class="reimbursementFieldLabel0807052">分機／電話</span><input id="r080Phone" value="${escHtml0807052(saved.phone||defaultPhone)}" placeholder="例如：07902"></label>
+          <label><span class="reimbursementFieldLabel0807052">核銷部門 <span class="required">*</span></span><input id="r080UnitDept" value="${escHtml0807052(unitDept)}" placeholder="例如：行政部"></label>
+        </div>
+      </section>
+      <section class="reimbursementSection0807052">
+        <div class="reimbursementSectionHead0807052"><span>2</span><div><h4>聚餐與人數</h4><p>日期、地點及出席名單取自最終決議，可於產製前再次核對。</p></div></div>
+        <div class="reimbursementGrid0807052 reimbursementGridDining0807052">
+          <label><span class="reimbursementFieldLabel0807052">聚餐日期 <span class="required">*</span></span><input id="r080DiningDate" type="date" value="${escHtml0807052(dateValue)}"></label>
+          <label class="reimbursementPlace0807052"><span class="reimbursementFieldLabel0807052">聚餐地點 <span class="required">*</span></span><input id="r080Place" value="${escHtml0807052(saved.place||rest?.name||'')}" placeholder="請輸入餐廳或聚餐地點"></label>
+        </div>
+        <div class="reimbursementGrid0807052 reimbursementGridCounts0807052">
+          <label><span class="reimbursementFieldLabel0807052">總公司人數</span><input id="r080HqCount" type="number" min="0" value="${saved.headquartersCount??counts.hq}"></label>
+          <label><span class="reimbursementFieldLabel0807052">駐外人員</span><input id="r080FieldCount" type="number" min="0" value="${saved.fieldCount??counts.field}"></label>
+          <label><span class="reimbursementFieldLabel0807052">環工部人數</span><input id="r080EnvCount" type="number" min="0" value="${saved.environmentCount??counts.env}"></label>
+          <label><span class="reimbursementFieldLabel0807052">合計人數</span><input id="r080TotalCount" class="reimbursementTotalCount0807052" type="number" value="0" readonly tabindex="-1"></label>
+        </div>
+        <div id="r080CountWarning" class="reimbursementCountWarning0807052" aria-live="polite" hidden></div>
+      </section>
+      <section class="reimbursementSection0807052">
+        <div class="reimbursementSectionHead0807052"><span>3</span><div><h4>付款與核銷</h4><p>核銷金額與代墊付款人員編將套入 Word，姓名欄保留親簽。</p></div></div>
+        <div class="reimbursementGrid0807052 reimbursementGridPayment0807052">
+          <label><span class="reimbursementFieldLabel0807052">實際核銷金額 <span class="required">*</span></span><div class="reimbursementAmount0807052"><span>NT$</span><input id="r080Amount" type="number" min="0" step="1" value="${escHtml0807052(amountValue)}" placeholder="例如：24000"></div><small class="reimbursementAmountHint0807052">${escHtml0807052(amountHint)}</small></label>
+          <label><span class="reimbursementFieldLabel0807052">代墊付款人</span><select id="r080PayerEmp" onchange="syncPayer0807052()">${buildPayerOptions0807052(payerEmp)}</select></label>
+          <label><span class="reimbursementFieldLabel0807052">代墊付款人姓名</span><input id="r080PayerName" value="${escHtml0807052(payerName)}" placeholder="選擇付款人後自動帶入"></label>
+          <label><span class="reimbursementFieldLabel0807052">申請日期</span><input id="r080ApplicationDate" type="date" value="${escHtml0807052(saved.applicationDate||new Date().toLocaleDateString('sv-SE'))}"></label>
+        </div>
+      </section>
+      <section class="reimbursementSection0807052 reimbursementConfirm0807052">
+        <div class="reimbursementSectionHead0807052"><span>4</span><div><h4>產製確認</h4><p>確認名單與分類人數後，即可產生正式申請單。</p></div></div>
+        <div id="r080AttendeeManager" class="reimbursementAttendeeManager0807052"></div>
+      </section>
+      ${reimbursementAttendees0807052.length>MAX_ATTENDEES?`<div class="reimbursementWarning0807052">申請單名單目前 ${reimbursementAttendees0807052.length} 人，0807052 範本最多可帶入 ${MAX_ATTENDEES} 人，請先調整名單。</div>`:''}
+      <div class="reimbursementActions0807052">
+        <div><span class="reimbursementActionLabel0807052">0807052 部門聯誼餐費申請單</span><span id="r080Status" class="reimbursementStatus0807052" role="status" aria-live="polite">資料尚未儲存</span></div>
+        <div class="reimbursementActionButtons0807052"><button class="btn reimbursementResetButton0807052" type="button" onclick="resetReimbursement0807052()">重設核銷資料</button><button class="btn" type="button" onclick="saveReimbursement0807052()">儲存核銷資料</button><button id="r080DownloadBtn" class="btn primary" type="button" onclick="download0807052()" ${(!D.final?.finalDateId||!D.final?.finalRestaurantId||!reimbursementAttendees0807052.length||reimbursementAttendees0807052.length>MAX_ATTENDEES)?'disabled':''}>產生 0807052 Word</button></div>
+      </div>`;
+    ['r080HqCount','r080FieldCount','r080EnvCount'].forEach(id=>document.getElementById(id)?.addEventListener('input',syncTotal0807052));
+    if(payerEmp)syncPayer0807052();
+    renderAttendees0807052();
+    syncTotal0807052();
+  }
+  function collect0807052(){
+    return {
+      applicantEmployeeNo:val0807052('r080ApplicantEmp'), applicantName:val0807052('r080ApplicantName'), phone:val0807052('r080Phone'),
+      unitDepartment:val0807052('r080UnitDept'), diningDate:val0807052('r080DiningDate'), place:val0807052('r080Place'),
+      headquartersCount:num0807052('r080HqCount'), fieldCount:num0807052('r080FieldCount'), environmentCount:num0807052('r080EnvCount'),
+      amount:val0807052('r080Amount'), payerEmployeeNo:val0807052('r080PayerEmp'), payerName:val0807052('r080PayerName'), applicationDate:val0807052('r080ApplicationDate'),
+      attendees0807052:reimbursementAttendees0807052.map(normalizeAttendee0807052)
+    };
+  }
+  function setStatus0807052(message,type=''){
+    const el=document.getElementById('r080Status');if(!el)return;
+    el.textContent=message||'';el.dataset.type=type;
+  }
+  function validate0807052(data,forDownload=false){
+    const missing=[];
+    if(!data.applicantEmployeeNo)missing.push('承辦人員編');
+    if(!data.applicantName)missing.push('承辦人姓名');
+    if(!data.unitDepartment)missing.push('核銷部門');
+    if(!data.diningDate)missing.push('聚餐日期');
+    if(!data.place)missing.push('聚餐地點');
+    if(forDownload&&!data.amount)missing.push('實際核銷金額');
+    return missing;
+  }
+  async function saveReimbursement0807052(silent=false){
+    if(typeof canManage==='function'&&!canManage()){if(!silent)alert('此帳號只有檢視權限');return false}
+    if(!activeSurveyId){if(!silent)alert('請先選擇活動');return false}
+    const data=collect0807052();
+    const missing=validate0807052(data,false);
+    if(missing.length){if(!silent)alert(`請先填寫：${missing.join('、')}`);return false}
+    try{
+      setStatus0807052('正在儲存…');
+      await doc('finalDecision',activeSurveyId).set({surveyId:activeSurveyId,reimbursement0807052:data,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+      if(D.final)D.final.reimbursement0807052=data;
+      setStatus0807052('核銷資料已儲存','success');
+      if(!silent)toast('0807052 核銷資料已儲存');
+      return true;
+    }catch(e){console.error('save 0807052 reimbursement failed',e);setStatus0807052('儲存失敗，請稍後再試','error');if(!silent)alert('核銷資料儲存失敗，請檢查網路或 Firestore 規則');return false}
+  }
+  async function resetReimbursement0807052(){
+    if(typeof canManage==='function'&&!canManage())return alert('此帳號只有檢視權限');
+    if(!activeSurveyId)return alert('請先選擇活動');
+    if(!confirm('確定要重設核銷資料嗎？\n\n已儲存的核銷填寫內容將被清除，並恢復為系統初始值；最終決議、問卷與出席資料不受影響。'))return;
+    try{
+      setStatus0807052('正在重設…');
+      const remove=firebase.firestore.FieldValue.delete();
+      await doc('finalDecision',activeSurveyId).set({reimbursement0807052:remove,reimbursement:remove,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+      if(D.final){delete D.final.reimbursement0807052;delete D.final.reimbursement}
+      renderReimbursement0807052();
+      setStatus0807052('核銷資料已恢復為系統初始值','success');
+      toast('核銷資料已重設');
+    }catch(e){
+      console.error('reset 0807052 reimbursement failed',e);
+      setStatus0807052('重設失敗，請稍後再試','error');
+      alert('核銷資料重設失敗，請檢查網路後再試一次');
+    }
+  }
+  function showReimbursementProcess0807052(){
+    const mask=document.getElementById('reimbursementProcessMask0807052');if(!mask)return;
+    reimbursementProcessReturnFocus0807052=document.activeElement;
+    mask.hidden=false;mask.style.display='flex';document.body.classList.add('modalOpen');
+    requestAnimationFrame(()=>mask.querySelector('.reimbursementProcessClose0807052')?.focus());
+  }
+  function closeReimbursementProcess0807052(){
+    const mask=document.getElementById('reimbursementProcessMask0807052');if(!mask)return;
+    mask.hidden=true;mask.style.display='none';document.body.classList.remove('modalOpen');
+    if(reimbursementProcessReturnFocus0807052?.focus)reimbursementProcessReturnFocus0807052.focus();
+  }
+  function xmlEscape0807052(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  function partsFromDate0807052(s){
+    const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return {roc:'',month:'',day:''};
+    return {roc:String(Number(m[1])-1911),month:String(Number(m[2])),day:String(Number(m[3]))};
+  }
+  function periodText0807052(month){
+    const m=Number(month);return `${m>=1&&m<=4?'■':'□'} 年初(1~4月)  ${m>=5&&m<=8?'■':'□'} 年中(5~8月)  ${m>=9&&m<=12?'■':'□'} 年末(9~12月)`;
+  }
+  function replaceAll0807052(xml,token,value){return xml.split(token).join(xmlEscape0807052(value))}
+  function alignWordFields0807052(xml){
+    return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,paragraph=>{
+      if(!/@@(?:PHONE|PLACE|AMOUNT)@@/.test(paragraph))return paragraph;
+      const alignment='<w:jc w:val="center"/>';
+      if(/<w:jc\b[^>]*\/>/.test(paragraph))return paragraph.replace(/<w:jc\b[^>]*\/>/g,alignment);
+      if(/<w:pPr\b[^>]*>/.test(paragraph))return paragraph.replace(/(<w:rPr\b[^>]*>|<\/w:pPr>)/,alignment+'$1');
+      return paragraph.replace(/(<w:p\b[^>]*>)/,'$1<w:pPr>'+alignment+'</w:pPr>');
+    });
+  }
+  async function download0807052(){
+    if(typeof JSZip==='undefined')return alert('Word 產生元件尚未載入，請重新整理頁面後再試一次');
+    if(!D.final?.finalDateId||!D.final?.finalRestaurantId)return alert('請先儲存最終日期與最終餐廳');
+    const data=collect0807052(),rows=data.attendees0807052||[],classified=data.headquartersCount+data.fieldCount+data.environmentCount;
+    if(!rows.length)return alert('申請單出席名單為 0 人，請先加入人員');
+    if(rows.length>MAX_ATTENDEES)return alert(`0807052 範本目前最多可帶入 ${MAX_ATTENDEES} 人，本次申請單共有 ${rows.length} 人。`);
+    const missing=validate0807052(data,true);if(missing.length)return alert(`請先填寫：${missing.join('、')}`);
+    if(classified!==rows.length&&!confirm(`分類人數合計 ${classified} 人，但最終出席名單為 ${rows.length} 人。仍要產生嗎？`))return;
+    if(!await saveReimbursement0807052(true))return alert('核銷資料尚未成功儲存，已取消產生 Word。');
+    setStatus0807052('正在產生 Word…');
+    const dining=partsFromDate0807052(data.diningDate),application=partsFromDate0807052(data.applicationDate);
+    const replacements={
+      '@@APPLICANT_EMP@@':data.applicantEmployeeNo,'@@APPLICANT_NAME@@':data.applicantName,'@@PHONE@@':data.phone,'@@UNIT_BOX@@':data.unitDepartment?'■':'□','@@UNIT_DEPT@@':data.unitDepartment,
+      '@@ROC_YEAR@@':dining.roc,'@@MONTH@@':dining.month,'@@DAY@@':dining.day,'@@PLACE@@':data.place,
+      '@@HQ_COUNT@@':data.headquartersCount,'@@FIELD_COUNT@@':data.fieldCount,'@@ENV_COUNT@@':data.environmentCount,'@@TOTAL_COUNT@@':rows.length,
+      // 代墊付款人姓名須親簽，Word 僅帶入員編；系統仍保存選定付款人的姓名。
+      '@@PERIOD_TEXT@@':periodText0807052(dining.month),'@@AMOUNT@@':Number(data.amount||0).toLocaleString('zh-TW'),'@@PAYER_EMP@@':data.payerEmployeeNo,'@@PAYER_NAME@@':'',
+      '@@APP_ROC_YEAR@@':application.roc,'@@APP_MONTH@@':application.month,'@@APP_DAY@@':application.day
+    };
+    for(let i=1;i<=MAX_ATTENDEES;i++){
+      const r=rows[i-1]||{};
+      replacements[`@@P${String(i).padStart(2,'0')}_DEPT@@`]=r.department||'';
+      replacements[`@@P${String(i).padStart(2,'0')}_EMP@@`]=r.employeeNo||'';
+      replacements[`@@P${String(i).padStart(2,'0')}_NAME@@`]=r.name||'';
+      replacements[`@@P${String(i).padStart(2,'0')}_NOTE@@`]='';
+    }
+    try{
+      const response=await fetch(TEMPLATE_URL,{cache:'no-store'});if(!response.ok)throw new Error('template HTTP '+response.status);
+      const zip=await JSZip.loadAsync(await response.arrayBuffer());
+      const entry=zip.file('word/document.xml');if(!entry)throw new Error('document.xml not found');
+      let xml=alignWordFields0807052(await entry.async('string'));
+      Object.entries(replacements).forEach(([token,value])=>{xml=replaceAll0807052(xml,token,value)});
+      // v10.62：核銷單位第一列真正貼齊左側；核銷期別固定在同一欄單列顯示。
+      {
+        const marker=' 部門(必填)';
+        const i=xml.indexOf(marker);
+        if(i>=0){
+          const ps=Math.max(xml.lastIndexOf('<w:p ',i),xml.lastIndexOf('<w:p>',i));
+          const pe=xml.indexOf('</w:p>',i)+6;
+          if(ps>=0&&pe>ps){
+            let p=xml.slice(ps,pe)
+              .replace(/<w:pStyle w:val=\"a8\"\/>/,'')
+              .replace(/<w:jc w:val=\"[^\"]+\"\/>/,'<w:jc w:val=\"left\"/>');
+            if(/<w:ind\b[^>]*\/>/.test(p)) p=p.replace(/<w:ind\b[^>]*\/>/,'<w:ind w:left=\"0\" w:right=\"0\" w:firstLine=\"0\" w:hanging=\"0\"/>');
+            else p=p.replace('</w:pPr>','<w:ind w:left=\"0\" w:right=\"0\" w:firstLine=\"0\" w:hanging=\"0\"/></w:pPr>');
+            xml=xml.slice(0,ps)+p+xml.slice(pe);
+          }
+        }
+      }
+      {
+        const marker='年初(1~4月)';
+        const i=xml.indexOf(marker);
+        if(i>=0){
+          const cs=xml.lastIndexOf('<w:tc>',i), ce=xml.indexOf('</w:tc>',i)+7;
+          if(cs>=0&&ce>cs){
+            let cell=xml.slice(cs,ce);
+            if(!/<w:noWrap\/>/.test(cell.slice(0,cell.indexOf('</w:tcPr>')))) cell=cell.replace('</w:tcPr>','<w:noWrap/><w:tcFitText/></w:tcPr>');
+            const rs=cell.lastIndexOf('<w:r ',cell.indexOf(marker));
+            const re=cell.indexOf('</w:r>',cell.indexOf(marker))+6;
+            if(rs>=0&&re>rs){
+              let r=cell.slice(rs,re);
+              if(/<w:rPr>/.test(r)){
+                r=r.replace(/<w:sz w:val=\"[^\"]+\"\/>/g,'').replace(/<w:szCs w:val=\"[^\"]+\"\/>/g,'');
+                r=r.replace('</w:rPr>','<w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/><w:spacing w:val=\"-2\"/></w:rPr>');
+              }
+              cell=cell.slice(0,rs)+r+cell.slice(re);
+            }
+            xml=xml.slice(0,cs)+cell+xml.slice(ce);
+          }
+        }
+      }
+      zip.file('word/document.xml',xml);
+      // 0807052 全份文件強制使用「標楷體」，避免 Word 依原範本局部字型顯示新細明體等字型。
+      const wordXmlNames=Object.keys(zip.files).filter(name=>/^word\/.*\.xml$/i.test(name));
+      for(const name of wordXmlNames){
+        let part=await zip.file(name).async('string');
+        part=part.replace(/<w:rFonts\b[^>]*\/>/g, tag=>{
+          let t=tag.replace(/\s+w:(?:asciiTheme|hAnsiTheme|eastAsiaTheme|cstheme)="[^"]*"/g,'');
+          for(const attr of ['ascii','hAnsi','eastAsia','cs']){
+            const re=new RegExp(`w:${attr}="[^"]*"`,'g');
+            if(re.test(t)) t=t.replace(re,`w:${attr}="標楷體"`);
+            else t=t.replace('/>',` w:${attr}="標楷體"/>`);
+          }
+          return t;
+        });
+        zip.file(name,part);
+      }
+      const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+      const a=document.createElement('a'),surveyTitle=String((typeof activeSurvey==='function'?activeSurvey()?.title:'')||'部門聚餐').replace(/[\\/:*?"<>|]/g,'_');
+      a.href=URL.createObjectURL(blob);a.download=`0807052_${surveyTitle}_${data.diningDate.replaceAll('-','')}.docx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+      setStatus0807052('0807052 Word 已產生','success');toast('0807052 Word 已產生');
+    }catch(e){console.error('generate 0807052 failed',e);setStatus0807052('Word 產生失敗，請稍後再試','error');alert('0807052 Word 產生失敗，請確認範本檔案已一併部署。')}
+  }
+
+  const renderAdminBefore0807052=window.renderAdmin;
+  if(typeof renderAdminBefore0807052==='function')window.renderAdmin=function(){const r=renderAdminBefore0807052.apply(this,arguments);renderReimbursement0807052();return r};
+  window.renderReimbursement0807052=renderReimbursement0807052;
+  window.saveReimbursement0807052=saveReimbursement0807052;
+  window.resetReimbursement0807052=resetReimbursement0807052;
+  window.download0807052=download0807052;
+  window.showReimbursementProcess0807052=showReimbursementProcess0807052;
+  window.closeReimbursementProcess0807052=closeReimbursementProcess0807052;
+  window.syncPayer0807052=syncPayer0807052;
+  window.addReimbursementAttendee0807052=addReimbursementAttendee0807052;
+  window.removeReimbursementAttendee0807052=removeReimbursementAttendee0807052;
+  window.resetReimbursementAttendees0807052=resetReimbursementAttendees0807052;
+  window.AdminReimbursement0807052=Object.freeze({
+    version:VERSION,
+    render:renderReimbursement0807052,
+    budgetDefault:budgetDefault0807052,
+    save:saveReimbursement0807052,
+    reset:resetReimbursement0807052,
+    download:download0807052
+  });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.getElementById('reimbursementProcessMask0807052')?.style.display==='flex')closeReimbursementProcess0807052()});
+  setTimeout(renderReimbursement0807052,300);
+})();
+
+
+
+
+
+
+
+
+
+
+
+;
+/* admin-back-to-top-7f8195b5.js */
+/* v10.62 管理端共用回到頁首按鈕與功能頁切換回頂。 */
+(() => {
+  const MODULE_VERSION='10.62';
+  const SHOW_AFTER=640;
+  let button=null;
+  let framePending=false;
+  let panelFramePending=false;
+  let activePanelId='';
+  let panelObserver=null;
+
+  function scrollRoot(){
+    return document.scrollingElement||document.documentElement;
+  }
+
+  function shouldShow(){
+    const root=scrollRoot();
+    const scrollTop=Math.max(window.scrollY||0,root?.scrollTop||0);
+    const pageIsLong=(root?.scrollHeight||0)>window.innerHeight+120;
+    return pageIsLong&&scrollTop>=SHOW_AFTER;
+  }
+
+  function sync(){
+    if(!button)return false;
+    const visible=shouldShow();
+    button.classList.toggle('isVisible',visible);
+    button.setAttribute('aria-hidden',String(!visible));
+    button.tabIndex=visible?0:-1;
+    return visible;
+  }
+
+  function requestSync(){
+    if(framePending)return;
+    framePending=true;
+    requestAnimationFrame(()=>{
+      framePending=false;
+      sync();
+    });
+  }
+
+  function scrollToTop(){
+    const reduceMotion=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches===true;
+    window.scrollTo({top:0,left:0,behavior:reduceMotion?'auto':'smooth'});
+  }
+
+  function currentActivePanelId(){
+    return document.querySelector('.admin .panel.active')?.id||document.querySelector('.panel.active')?.id||'';
+  }
+
+  function syncActivePanel(){
+    panelFramePending=false;
+    const nextPanelId=currentActivePanelId();
+    if(!nextPanelId||nextPanelId===activePanelId)return false;
+    const previousPanelId=activePanelId;
+    activePanelId=nextPanelId;
+    if(!previousPanelId)return false;
+    window.scrollTo({top:0,left:0,behavior:'auto'});
+    requestSync();
+    return true;
+  }
+
+  function requestPanelSync(){
+    if(panelFramePending)return;
+    panelFramePending=true;
+    requestAnimationFrame(syncActivePanel);
+  }
+
+  function observePanelChanges(){
+    activePanelId=currentActivePanelId();
+    panelObserver?.disconnect();
+    panelObserver=new MutationObserver(records=>{
+      const changed=records.some(record=>record.target instanceof Element&&record.target.classList.contains('panel'));
+      if(changed)requestPanelSync();
+    });
+    panelObserver.observe(document.getElementById('admin')||document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+  }
+
+  function ensureButton(){
+    if(button?.isConnected)return button;
+    button=document.createElement('button');
+    button.type='button';
+    button.className='adminBackToTopV1043';
+    button.title='回到頁首';
+    button.setAttribute('aria-label','回到頁首');
+    button.setAttribute('aria-hidden','true');
+    button.tabIndex=-1;
+    button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 14.5 12 9l5.5 5.5"/></svg>';
+    button.addEventListener('click',scrollToTop);
+    document.body.appendChild(button);
+    return button;
+  }
+
+  function init(){
+    ensureButton();
+    observePanelChanges();
+    sync();
+    window.addEventListener('scroll',requestSync,{passive:true});
+    window.addEventListener('resize',requestSync,{passive:true});
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});
+  else init();
+
+  window.AdminBackToTop=Object.freeze({
+    version:MODULE_VERSION,
+    showAfter:SHOW_AFTER,
+    sync,
+    syncActivePanel,
+    scrollToTop
+  });
+})();
+
+
+
+
+;
+/* admin-dining-assignments-f6830356.js */
+/* v10.62 近期聚餐安排：全員共用近期項目，歷程依辦理狀態分流。 */
+(()=>{
+  'use strict';
+  const VERSION='10.62';
+  let editingId='';
+  let historyFilter='upcoming';
+
+  function html(value){return typeof esc==='function'?esc(String(value??'')):String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
+  function attr(value){return typeof escAttr==='function'?escAttr(String(value??'')):html(value)}
+  function email(value){return String(value||'').trim().toLowerCase()}
+  function chineseNumber(value){
+    const n=Number(value),digits=['零','一','二','三','四','五','六','七','八','九'];
+    if(n<=0||!Number.isInteger(n))return String(value||'');
+    if(n<10)return digits[n];if(n===10)return'十';if(n<20)return'十'+digits[n%10];if(n===20)return'二十';
+    return String(n);
+  }
+  function title(item){return`${Number(item.year)||''}年第${chineseNumber(item.occurrence)}次部門聚餐`}
+  function period(item){return`${Number(item.startMonth)||''}至${Number(item.endMonth)||''}月`}
+  function currentYearMonth(){const now=globalThis.__diningAssignmentNowV1049?new Date(globalThis.__diningAssignmentNowV1049):new Date();return{year:now.getFullYear()-1911,month:now.getMonth()+1}}
+  function timeIndex(year,month){return Number(year)*12+Number(month)-1}
+  function status(item){
+    const now=currentYearMonth(),current=timeIndex(now.year,now.month),start=timeIndex(item.year,item.startMonth),end=timeIndex(item.year,item.endMonth);
+    return current<start?'尚未辦理':current>end?'已辦理':'本期辦理';
+  }
+  function normalizedItems(){
+    return (Array.isArray(D?.diningAssignments)?D.diningAssignments:[]).map((item,index)=>({
+      id:String(item?.id||`legacy_${index}`),year:Number(item?.year)||0,occurrence:Number(item?.occurrence)||0,
+      startMonth:Number(item?.startMonth)||0,endMonth:Number(item?.endMonth)||0,
+      responsibleIds:Array.isArray(item?.responsibleIds)?item.responsibleIds.map(String):[],
+      responsibleNames:Array.isArray(item?.responsibleNames)?item.responsibleNames.map(String):[],
+      responsibleEmails:Array.isArray(item?.responsibleEmails)?item.responsibleEmails.map(email):[]
+    })).filter(item=>item.year&&item.occurrence&&item.startMonth&&item.endMonth)
+      .sort((a,b)=>b.year-a.year||b.occurrence-a.occurrence);
+  }
+  function simulatedMemberId(){return String(document.getElementById('simulateMemberSelectV807')?.value||'')}
+  function simulatedMember(){const id=simulatedMemberId();return id?(D?.members||[]).find(item=>String(item.id)===id)||null:null}
+  function isSimulatingMember(){return !!simulatedMember()}
+  function canManageAssignments(){return !!isSystemAdmin&&!isSimulatingMember()}
+  function focusItem(items){
+    const current=items.find(item=>status(item)==='本期辦理');if(current)return current;
+    const upcoming=items.filter(item=>status(item)==='尚未辦理').sort((a,b)=>timeIndex(a.year,a.startMonth)-timeIndex(b.year,b.startMonth)||a.occurrence-b.occurrence);
+    if(upcoming.length)return upcoming[0];
+    return [...items].sort((a,b)=>timeIndex(b.year,b.endMonth)-timeIndex(a.year,a.endMonth)||b.occurrence-a.occurrence)[0]||null;
+  }
+  function historyItems(value=historyFilter){
+    const items=normalizedItems();
+    if(value==='past')return items.filter(item=>status(item)==='已辦理').sort((a,b)=>timeIndex(b.year,b.endMonth)-timeIndex(a.year,a.endMonth)||b.occurrence-a.occurrence);
+    return items.filter(item=>status(item)!=='已辦理').sort((a,b)=>{
+      const currentDifference=(status(a)==='本期辦理'?0:1)-(status(b)==='本期辦理'?0:1);
+      return currentDifference||timeIndex(a.year,a.startMonth)-timeIndex(b.year,b.startMonth)||a.occurrence-b.occurrence;
+    });
+  }
+  function itemMarkup(item){
+    return `<article class="diningAssignmentItemV1046"><h4>${html(title(item))}</h4><div class="diningAssignmentMetaRowV1048">狀態：${html(status(item))}</div><div class="diningAssignmentMetaRowV1048">辦理期間：${html(item.year)}年${html(period(item))}</div><div class="diningAssignmentMetaRowV1048">負責人：${html(item.responsibleNames.join('、')||'尚未設定')}</div></article>`;
+  }
+  function render(){
+    const box=document.getElementById('diningAssignmentListV1046');if(!box)return;
+    const items=normalizedItems(),focused=focusItem(items);
+    const manage=document.getElementById('manageDiningAssignmentsV1046');if(manage)manage.hidden=!canManageAssignments();
+    if(!focused){box.innerHTML='<div class="diningAssignmentEmptyV1046">目前尚未建立聚餐安排。</div>';return}
+    box.innerHTML=itemMarkup(focused);
+  }
+  function ensureAllDialog(){
+    let mask=document.getElementById('diningAssignmentAllMaskV1048');if(mask)return mask;
+    mask=document.createElement('div');mask.id='diningAssignmentAllMaskV1048';mask.className='modalMask';mask.setAttribute('role','dialog');mask.setAttribute('aria-modal','true');mask.setAttribute('aria-labelledby','diningAssignmentAllTitleV1048');
+    mask.innerHTML='<div class="modal diningAssignmentDialogV1046 diningAssignmentAllDialogV1048"><div class="diningAssignmentDialogHeadV1046"><div><h2 id="diningAssignmentAllTitleV1048">聚餐負責人安排</h2><p>查看近期安排與歷次已辦理紀錄。</p></div><button class="diningAssignmentCloseV1046" type="button" aria-label="關閉" onclick="closeDiningAssignmentAllV1048()">×</button></div><div class="diningAssignmentDialogBodyV1046"><div class="diningAssignmentHistoryTabsV1050" role="tablist" aria-label="聚餐安排狀態"><button id="diningAssignmentUpcomingTabV1050" type="button" role="tab" onclick="setDiningAssignmentHistoryFilterV1050(\'upcoming\')">近期安排</button><button id="diningAssignmentPastTabV1050" type="button" role="tab" onclick="setDiningAssignmentHistoryFilterV1050(\'past\')">已辦理</button></div><div id="diningAssignmentAllListV1048" class="diningAssignmentHistoryListV1050"></div></div></div>';
+    mask.addEventListener('click',event=>{if(event.target===mask)closeAllDialog()});document.body.appendChild(mask);return mask;
+  }
+  function historyMarkup(item){
+    const currentStatus=status(item),statusClass=currentStatus==='本期辦理'?' current':currentStatus==='尚未辦理'?' upcoming':' past';
+    return `<article class="diningAssignmentHistoryRowV1050"><div class="diningAssignmentHistoryIdentityV1050"><h4>${html(title(item))}</h4><span class="diningAssignmentHistoryStatusV1050${statusClass}">${html(currentStatus)}</span></div><div class="diningAssignmentHistoryFieldV1050"><b>辦理期間</b><span>${html(item.year)}年${html(period(item))}</span></div><div class="diningAssignmentHistoryFieldV1050"><b>負責人</b><span>${html(item.responsibleNames.join('、')||'尚未設定')}</span></div></article>`;
+  }
+  function renderHistory(){
+    const box=document.getElementById('diningAssignmentAllListV1048');if(!box)return;
+    const items=historyItems();
+    const upcoming=document.getElementById('diningAssignmentUpcomingTabV1050'),past=document.getElementById('diningAssignmentPastTabV1050');
+    if(upcoming){const active=historyFilter==='upcoming';upcoming.classList.toggle('active',active);upcoming.setAttribute('aria-selected',String(active))}
+    if(past){const active=historyFilter==='past';past.classList.toggle('active',active);past.setAttribute('aria-selected',String(active))}
+    box.innerHTML=items.length?items.map(historyMarkup).join(''):`<div class="diningAssignmentEmptyV1046">${historyFilter==='past'?'目前沒有已辦理紀錄。':'目前沒有本期或尚未辦理的安排。'}</div>`;
+  }
+  function setHistoryFilter(value){historyFilter=value==='past'?'past':'upcoming';renderHistory()}
+  function openAllDialog(){
+    const mask=ensureAllDialog();historyFilter='upcoming';renderHistory();
+    mask.style.display='flex';document.body.style.overflow='hidden';mask.querySelector('.diningAssignmentCloseV1046')?.focus();
+  }
+  function closeAllDialog(){const mask=document.getElementById('diningAssignmentAllMaskV1048');if(mask)mask.style.display='none';document.body.style.overflow=''}
+  function setFilter(value){if(value==='all')return openAllDialog();render()}
+
+  function ensureDialog(){
+    let mask=document.getElementById('diningAssignmentMaskV1046');if(mask)return mask;
+    mask=document.createElement('div');mask.id='diningAssignmentMaskV1046';mask.className='modalMask';mask.setAttribute('role','dialog');mask.setAttribute('aria-modal','true');mask.setAttribute('aria-labelledby','diningAssignmentDialogTitleV1046');
+    mask.innerHTML=`<div class="modal diningAssignmentDialogV1046"><div class="diningAssignmentDialogHeadV1046"><div><h2 id="diningAssignmentDialogTitleV1046">管理聚餐負責人安排</h2><p>設定年度、次別、辦理期間與負責人。</p></div><button class="diningAssignmentCloseV1046" type="button" aria-label="關閉" onclick="closeDiningAssignmentManagerV1046()">×</button></div><div class="diningAssignmentDialogBodyV1046"><div class="diningAssignmentManagerBarV1046"><h3>全部安排</h3><button class="btn primary" type="button" onclick="startDiningAssignmentV1046()">新增安排</button></div><div id="diningAssignmentEditorV1046" class="diningAssignmentEditorV1046" hidden><div class="diningAssignmentEditorGridV1046"><div><label for="diningAssignmentYearV1046">年度</label><input id="diningAssignmentYearV1046" type="number" min="100" max="999" placeholder="例如：115"></div><div><label for="diningAssignmentOccurrenceV1046">次別</label><input id="diningAssignmentOccurrenceV1046" type="number" min="1" max="20" placeholder="例如：2"></div><div><label for="diningAssignmentStartMonthV1046">開始月份</label><select id="diningAssignmentStartMonthV1046">${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join('')}</select></div><div><label for="diningAssignmentEndMonthV1046">結束月份</label><select id="diningAssignmentEndMonthV1046">${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}月</option>`).join('')}</select></div></div><div class="field"><label>負責人（可複選）</label><div id="diningAssignmentPeoplePickerV1046" class="diningAssignmentPeoplePickerV1046"></div></div><div class="diningAssignmentEditorActionsV1046"><button class="btn" type="button" onclick="cancelDiningAssignmentEditV1046()">取消</button><button id="saveDiningAssignmentV1046" class="btn primary" type="button" onclick="saveDiningAssignmentV1046()">儲存安排</button></div></div><div id="diningAssignmentAdminListV1046" class="diningAssignmentAdminListV1046"></div></div></div>`;
+    mask.addEventListener('click',event=>{if(event.target===mask)closeManager()});
+    document.body.appendChild(mask);return mask;
+  }
+  function renderPicker(selected=[]){
+    const box=document.getElementById('diningAssignmentPeoplePickerV1046');if(!box)return;
+    const ids=new Set(selected.map(String));
+    box.innerHTML=(D?.members||[]).map(member=>`<label class="diningAssignmentPersonChoiceV1046"><input type="checkbox" value="${attr(member.id)}" ${ids.has(String(member.id))?'checked':''}><span>${html(member.name||'未命名')}${member.active===false?'<small>已停用</small>':''}</span></label>`).join('')||'<div class="muted">目前沒有人員資料，請先到人員管理建立名單。</div>';
+  }
+  function renderAdminList(){
+    const box=document.getElementById('diningAssignmentAdminListV1046');if(!box)return;
+    const items=normalizedItems();
+    box.innerHTML=items.map(item=>`<div class="diningAssignmentAdminRowV1046"><div><b>${html(title(item))}</b><small>辦理期間：${html(period(item))}</small></div><div>${html(item.responsibleNames.join('、')||'尚未設定負責人')}</div><div class="diningAssignmentAdminActionsV1046"><button class="btn" type="button" onclick="editDiningAssignmentV1046('${attr(item.id)}')">編輯</button><button class="btn red" type="button" onclick="deleteDiningAssignmentV1046('${attr(item.id)}')">刪除</button></div></div>`).join('')||'<div class="diningAssignmentEmptyV1046">目前尚未建立安排。</div>';
+  }
+  function managementBlocked(){return alert(isSimulatingMember()?'請先結束模擬身分，再管理聚餐負責人安排':'只有系統管理員可以管理聚餐負責人安排')}
+  function openManager(){if(!canManageAssignments())return managementBlocked();const mask=ensureDialog();editingId='';document.getElementById('diningAssignmentEditorV1046').hidden=true;renderAdminList();mask.style.display='flex';document.body.style.overflow='hidden'}
+  function closeManager(){const mask=document.getElementById('diningAssignmentMaskV1046');if(mask)mask.style.display='none';document.body.style.overflow='';editingId=''}
+  function startEdit(item=null){
+    if(!canManageAssignments())return managementBlocked();ensureDialog();editingId=item?.id||'';
+    const editor=document.getElementById('diningAssignmentEditorV1046');editor.hidden=false;
+    const currentYear=new Date().getFullYear()-1911;
+    document.getElementById('diningAssignmentYearV1046').value=item?.year||currentYear;
+    document.getElementById('diningAssignmentOccurrenceV1046').value=item?.occurrence||1;
+    document.getElementById('diningAssignmentStartMonthV1046').value=item?.startMonth||1;
+    document.getElementById('diningAssignmentEndMonthV1046').value=item?.endMonth||4;
+    renderPicker(item?.responsibleIds||[]);editor.scrollIntoView({block:'nearest'});
+  }
+  function editItem(id){const item=normalizedItems().find(entry=>entry.id===String(id));if(item)startEdit(item)}
+  function cancelEdit(){editingId='';const editor=document.getElementById('diningAssignmentEditorV1046');if(editor)editor.hidden=true}
+  function selectedPeople(){
+    const ids=[...document.querySelectorAll('#diningAssignmentPeoplePickerV1046 input:checked')].map(input=>String(input.value));
+    return ids.map(id=>D.members.find(member=>String(member.id)===id)).filter(Boolean);
+  }
+  async function persist(items,message,before=null,after=null){
+    await doc('systemSettings','diningAssignments').set({items,updatedAt:firebase.firestore.FieldValue.serverTimestamp(),updatedByEmail:email(currentUser?.email),updatedByName:currentUser?.displayName||''},{merge:true});
+    D.diningAssignments=items;
+    if(typeof writeAuditDetailV760==='function')try{await writeAuditDetailV760({action:message==='聚餐負責人安排已刪除'?'刪除':before?'修改':'新增',targetType:'聚餐負責人安排',targetId:after?.id||before?.id||'',targetLabel:title(after||before||{}),before,after,fields:['year','occurrence','startMonth','endMonth','responsibleNames'],surveyId:''})}catch(error){console.warn('write dining assignment audit failed',error)}
+    render();renderAdminList();toast(message);
+  }
+  async function save(){
+    if(!canManageAssignments())return managementBlocked();
+    const year=Number(document.getElementById('diningAssignmentYearV1046').value),occurrence=Number(document.getElementById('diningAssignmentOccurrenceV1046').value),startMonth=Number(document.getElementById('diningAssignmentStartMonthV1046').value),endMonth=Number(document.getElementById('diningAssignmentEndMonthV1046').value),people=selectedPeople();
+    if(!Number.isInteger(year)||year<100||year>999)return alert('年度請輸入三位數民國年，例如 115');
+    if(!Number.isInteger(occurrence)||occurrence<1||occurrence>20)return alert('次別請輸入 1 至 20');
+    if(startMonth<1||endMonth>12||startMonth>endMonth)return alert('辦理期間的開始月份不可晚於結束月份');
+    if(!people.length)return alert('請至少選擇一位負責人');
+    const items=normalizedItems(),before=items.find(item=>item.id===editingId)||null;
+    if(items.some(item=>item.id!==editingId&&item.year===year&&item.occurrence===occurrence))return alert(`${year}年第${chineseNumber(occurrence)}次已經建立安排`);
+    const next={id:editingId||(globalThis.crypto?.randomUUID?.()||`assignment_${Date.now()}`),year,occurrence,startMonth,endMonth,responsibleIds:people.map(person=>String(person.id)),responsibleNames:people.map(person=>String(person.name||'未命名')),responsibleEmails:people.map(person=>typeof memberGoogleEmail==='function'?memberGoogleEmail(person):email(person.googleEmail||person.email)).filter(Boolean)};
+    const merged=items.filter(item=>item.id!==editingId).concat(next).sort((a,b)=>b.year-a.year||b.occurrence-a.occurrence),button=document.getElementById('saveDiningAssignmentV1046');button.disabled=true;
+    try{await persist(merged,before?'聚餐負責人安排已更新':'聚餐負責人安排已新增',before,next);cancelEdit()}
+    catch(error){console.error('save dining assignment failed',error);alert('聚餐負責人安排儲存失敗，請確認已部署最新版 Firestore 規則')}
+    finally{button.disabled=false}
+  }
+  async function remove(id){
+    if(!canManageAssignments())return managementBlocked();const items=normalizedItems(),before=items.find(item=>item.id===String(id));if(!before)return;
+    if(!confirm(`確定刪除「${title(before)}」的負責人安排？`))return;
+    try{await persist(items.filter(item=>item.id!==before.id),'聚餐負責人安排已刪除',before,null)}catch(error){console.error('delete dining assignment failed',error);alert('刪除失敗，請確認網路與 Firestore 規則')}
+  }
+
+  window.renderDiningAssignmentsV1046=render;
+  window.setDiningAssignmentFilterV1046=setFilter;
+  window.setDiningAssignmentHistoryFilterV1050=setHistoryFilter;
+  window.closeDiningAssignmentAllV1048=closeAllDialog;
+  window.openDiningAssignmentManagerV1046=openManager;
+  window.closeDiningAssignmentManagerV1046=closeManager;
+  window.startDiningAssignmentV1046=()=>startEdit();
+  window.editDiningAssignmentV1046=editItem;
+  window.cancelDiningAssignmentEditV1046=cancelEdit;
+  window.saveDiningAssignmentV1046=save;
+  window.deleteDiningAssignmentV1046=remove;
+  window.AdminDiningAssignments=Object.freeze({version:VERSION,render,setFilter,open:openManager,close:closeManager});
+})();
+
+
+;
+/* admin-login-audit-38d43f93.js */
+/* 登入紀錄在最終權限與資料確認後寫入，首頁登入及恢復登入狀態共用此流程。 */
+(()=>{
+  'use strict';
+  const VERSION='10.62';
+  const WRITE_TIMEOUT=4000;
+  let entry=null;
+
+  function clearLegacyMarker(uid){
+    if(!uid)return;
+    try{sessionStorage.removeItem('surveyLoginLogged:'+uid)}catch(error){console.warn('清除舊登入紀錄標記失敗',error)}
+  }
+  function begin(user){
+    if(!user){clearLegacyMarker(entry?.user.uid);entry=null;return}
+    clearLegacyMarker(user.uid);
+    if(entry?.user.uid===user.uid)return;
+    entry={user:{uid:user.uid,email:String(user.email||'').trim().toLowerCase(),displayName:user.displayName||''},events:new Map()};
+  }
+  function role(){
+    if(isSystemAdmin||window.AdminViewRole?.isActualSystemAdmin())return '系統管理員';
+    if(!isAdmin)return '未取得後台權限';
+    return currentAccessRole==='manager'?'活動管理者':currentAccessRole==='member'?'後台帳號':'結果檢視者';
+  }
+  async function boundedWrite(event){
+    let timer;
+    try{
+      await Promise.race([event.ref.set(event.data),new Promise((_,reject)=>{
+        timer=setTimeout(()=>reject(Object.assign(new Error('登入紀錄寫入等待逾時'),{code:'deadline-exceeded'})),WRITE_TIMEOUT);
+      })]);
+      return true;
+    }finally{clearTimeout(timer)}
+  }
+  async function commit(event){
+    for(let attempt=0;attempt<3;attempt++){
+      try{await boundedWrite(event);event.saved=true;return true}
+      catch(error){
+        const code=String(error?.code||'').replace(/^firestore\//,'');
+        if(attempt===2||!['unavailable','deadline-exceeded','aborted','internal','unknown'].includes(code)){
+          console.warn('登入紀錄寫入失敗',error);return false;
+        }
+      }
+    }
+    return false;
+  }
+  async function record(result,reason=''){
+    if(!entry||!db||!currentUser||currentUser.uid!==entry.user.uid)return false;
+    let event=entry.events.get(result);
+    if(!event){
+      const user=entry.user;
+      let displayName=user.displayName;
+      if(typeof findMemberByGoogleEmail==='function'&&typeof memberDisplayName==='function'){
+        try{displayName=memberDisplayName(findMemberByGoogleEmail(user.email))||displayName}catch{}
+      }
+      event={saved:false,pending:null,ref:col('surveyLoginLogs').doc(),data:{
+        ...user,displayName,result,reason,role:role(),createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      }};
+      entry.events.set(result,event);
+    }
+    if(event.saved)return true;
+    if(!event.pending)event.pending=commit(event).finally(()=>{event.pending=null});
+    return event.pending;
+  }
+  const logoutBeforeAudit=logout;
+  logout=async function(){
+    if(currentUser)begin(currentUser);
+    try{await record('logout','使用者登出')}
+    finally{clearLegacyMarker(entry?.user.uid);begin(null)}
+    return logoutBeforeAudit();
+  };
+  window.logout=logout;
+  window.addEventListener('online',()=>{
+    if(entry)for(const event of entry.events.values())if(!event.saved)void record(event.data.result,event.data.reason);
+  });
+  window.AdminLoginAudit=Object.freeze({version:VERSION,begin,record});
+})();
+
+;
+/* admin-audit-presentation-a880f949.js */
+/* 操作紀錄的顯示轉譯。保留原始 before／after，不回寫舊紀錄。 */
+(() => {
+  const VERSION='10.62';
+  const labels={dateIds:'可參加日期',adminEditedBy:'修改人員',attendanceAdjustments:'出席調整',restaurantRanks:'餐廳選擇順序',cannotAttend:'參加狀態',memberName:'姓名',preferredDateId:'第一可參加日期',alternateDateId:'第二可參加日期',finalDateId:'最終日期',finalRestaurantId:'最終餐廳'};
+  const dateFields=new Set(['dateIds','preferredDateId','alternateDateId','finalDateId']);
+  Object.assign(labels,{memberCount:'活動人數',addedMember:'加入人員'});
+  const restaurantFields=new Set(['restaurantRanks','finalRestaurantId']);
+  const caches=new Map();
+  let renderGeneration=0;
+  const own=(obj,key)=>Object.prototype.hasOwnProperty.call(obj||{},key);
+  const escape=value=>esc(String(value??''));
+  const surveyOf=log=>String(log.surveyId||log.after?.surveyId||log.before?.surveyId||'');
+  const cacheKey=(survey,kind)=>JSON.stringify([currentUser?.uid||'',survey,kind]);
+  const fieldLabel=change=>labels[change.field]||change.label||auditFieldLabelsV760[change.field]||change.field||'';
+  function list(value){
+    if(Array.isArray(value))return value;
+    if(value==null||['','空白','未設定','未選擇日期','無出席調整'].includes(String(value)))return [];
+    if(typeof value==='string'){
+      try{const decoded=JSON.parse(value);if(Array.isArray(decoded))return decoded}catch{}
+      return value.split(/[、\n]/).map(item=>item.trim()).filter(Boolean);
+    }
+    return [value];
+  }
+  const ids=value=>[...new Set(list(value).filter(item=>typeof item==='string'||typeof item==='number').map(String))];
+  function changesFor(log){
+    if(Array.isArray(log.changes)&&log.changes.length)return log.changes;
+    if(!own(log,'before')&&!own(log,'after'))return [];
+    const keys=[...new Set([...Object.keys(log.before||{}),...Object.keys(log.after||{})])].filter(key=>!['createdAt','updatedAt'].includes(key));
+    return keys.filter(key=>JSON.stringify(log.before?.[key])!==JSON.stringify(log.after?.[key])).map(field=>({field,label:labels[field]||auditFieldLabelsV760[field]||field,before:auditValueV760(field,log.before?.[field]),after:auditValueV760(field,log.after?.[field])}));
+  }
+  const raw=(log,change,side)=>own(log[side],change.field)?log[side][change.field]:change[side];
+  function currentRows(survey,kind){
+    return (kind==='dates'?D.dates:D.restaurants).filter(row=>row.surveyId?String(row.surveyId)===survey:!!survey&&String(D.surveyDataId||activeSurveyId||'')===survey);
+  }
+  function resolve(log,kind,id){
+    const survey=surveyOf(log),snapshot=log.displaySnapshot;
+    if(snapshot?.surveyId===survey){const saved=snapshot[kind]?.find(row=>String(row.id)===id);if(saved?.label)return saved.label}
+    const row=currentRows(survey,kind).find(item=>String(item.id)===id);
+    if(row)return String(kind==='dates'?row.label||'':row.name||'');
+    const cached=caches.get(cacheKey(survey,kind));
+    return cached&&Date.now()-cached.time<60000?cached.rows.find(item=>String(item.id)===id)?.label||'':'';
+  }
+  function entityText(log,kind,id){
+    const found=resolve(log,kind,id);if(found)return found;
+    if(kind==='dates'&&/^\d{1,4}[/-]\d{1,2}(?:[/-]\d{1,2})?(?:\D|$)/.test(id))return id;
+    const state=caches.get(cacheKey(surveyOf(log),kind));
+    const name=kind==='dates'?'日期':'餐廳';
+    if(state?.status==='ready')return name+'資料已移除';
+    if(state?.status==='failed')return name+'資料暫時無法讀取';
+    return surveyOf(log)?'正在讀取'+name+'…':'舊紀錄未保留可還原的'+name+'資料';
+  }
+  function person(log,value){
+    if(value===undefined||value==='未設定')return '未設定';
+    if(value===null||value==='')return '空白';
+    const email=String(value).trim().toLowerCase();
+    const saved=log.displaySnapshot?.people?.find(row=>row.email===email);
+    if(saved?.name)return saved.name;
+    const account=(D.memberAccounts||[]).find(row=>String(row.email||'').trim().toLowerCase()===email);
+    const member=(D.members||[]).find(row=>(account&&String(row.id)===String(account.memberId||account.id))||[row.googleEmail,row.email,row.gmail].some(item=>item&&String(item).trim().toLowerCase()===email));
+    if(member?.name)return [member.department||member.departmentName,member.name].filter(Boolean).join(' ');
+    if(String(log.actorEmail||log.userEmail||'').trim().toLowerCase()===email)return log.actorName||log.userName||String(value);
+    return String(value);
+  }
+  function adjustmentText(log,item){
+    if(!item||typeof item!=='object')return '舊紀錄未保留可還原的出席調整資料';
+    const member=item.member||D.members.find(row=>String(row.id)===String(item.memberId))||{};
+    const name=[member.department||member.departmentName,member.name||member.memberName].filter(Boolean).join(' ')||'人員資料已移除';
+    const action={add:'加入出席',remove:'移除出席'}[item.action]||'出席調整';
+    return [action+'｜'+name,item.reason?'原因：'+item.reason:'',item.note?'備註：'+item.note:'',item.actorName||item.actorEmail?'調整人：'+(item.actorName||person(log,item.actorEmail)):''].filter(Boolean).join('\n');
+  }
+  const stableKey=item=>item&&typeof item==='object'?(item.id||JSON.stringify(item)):String(item);
+  function valueText(log,change,side){
+    const value=raw(log,change,side),field=change.field;
+    if(value===undefined||value==='未設定')return '未設定';
+    if(dateFields.has(field))return ids(value).map(id=>entityText(log,'dates',id)).join('\n')||'未選擇日期';
+    if(restaurantFields.has(field))return ids(value).map((id,index)=>(field==='restaurantRanks'?'第 '+(index+1)+' 選擇：':'')+entityText(log,'restaurants',id)).join('\n')||'未選擇餐廳';
+    if(field==='adminEditedBy')return person(log,value);
+    if(field==='attendanceAdjustments')return list(value).map(item=>adjustmentText(log,item)).join('\n\n')||'無出席調整';
+    if(field==='cannotAttend')return value===true||value==='true'?'不克參加':value===false||value==='false'?'可以參加':String(value||'空白');
+    if(change[side]!==undefined&&typeof change[side]!=='object'&&!String(change[side]).includes('[object Object]'))return String(change[side]);
+    if(value&&typeof value==='object')return JSON.stringify(value,null,2);
+    return value==null||value===''?'空白':String(value);
+  }
+  function cellHtml(log,change,side){
+    const field=change.field,value=raw(log,change,side);
+    if(dateFields.has(field)&&ids(value).length){
+      const other=new Set(ids(raw(log,change,side==='before'?'after':'before')));
+      return '<ul class="auditReadableList">'+ids(value).map(id=>'<li>'+(!other.has(id)?'<span class="auditChangeBadge '+(side==='after'?'added':'removed')+'">'+(side==='after'?'新增':'取消')+'</span>':'')+escape(entityText(log,'dates',id))+'</li>').join('')+'</ul>';
+    }
+    if(field==='attendanceAdjustments'&&list(value).length){
+      const other=new Set(list(raw(log,change,side==='before'?'after':'before')).map(stableKey));
+      return '<ul class="auditReadableList">'+list(value).map(item=>'<li>'+(!other.has(stableKey(item))?'<span class="auditChangeBadge '+(side==='after'?'added':'removed')+'">'+(side==='after'?'新增調整':'刪除調整')+'</span>':'')+escape(adjustmentText(log,item))+'</li>').join('')+'</ul>';
+    }
+    return escape(valueText(log,change,side));
+  }
+  function summary(log){
+    return String(log.summary||'—').replace(/\b(dateIds|adminEditedBy|attendanceAdjustments|restaurantRanks|cannotAttend|memberName|preferredDateId|alternateDateId|finalDateId|finalRestaurantId)\b/g,key=>labels[key]);
+  }
+  function diff(log){
+    const changes=changesFor(log);
+    if(!changes.length)return '<span class="auditLegacyHintV741">'+(own(log,'before')||own(log,'after')?'本次沒有可比對的欄位差異。':'此筆舊紀錄沒有保留修改前／修改後的資料。')+'</span>';
+    return '<details class="auditDiffV741" open><summary>修改前／修改後（'+changes.length+' 項）</summary><table class="auditDiffTableV738 auditReadableTable"><thead><tr><th>欄位</th><th>修改前</th><th>修改後</th></tr></thead><tbody>'+changes.map(change=>'<tr><td>'+escape(fieldLabel(change))+'</td><td>'+cellHtml(log,change,'before')+'</td><td>'+cellHtml(log,change,'after')+'</td></tr>').join('')+'</tbody></table></details>';
+  }
+  function requirements(log){
+    const result={dates:new Set(),restaurants:new Set()};
+    for(const change of changesFor(log))for(const side of ['before','after']){
+      const kind=dateFields.has(change.field)?'dates':restaurantFields.has(change.field)?'restaurants':'';
+      if(kind)for(const id of ids(raw(log,change,side)))if(!resolve(log,kind,id)&&!(kind==='dates'&&/^\d{1,4}[/-]\d{1,2}/.test(id)))result[kind].add(id);
+    }
+    return result;
+  }
+  function prepare(log){
+    const survey=surveyOf(log),snapshot={version:VERSION,surveyId:survey,dates:[],restaurants:[],people:[]};
+    for(const change of changesFor(log))for(const side of ['before','after']){
+      const kind=dateFields.has(change.field)?'dates':restaurantFields.has(change.field)?'restaurants':'';
+      if(kind)for(const id of ids(raw(log,change,side))){const label=resolve(log,kind,id);if(label&&!snapshot[kind].some(row=>row.id===id))snapshot[kind].push({id,label})}
+      if(change.field==='adminEditedBy'){
+        const value=raw(log,change,side);if(typeof value==='string'&&value.includes('@')){const email=value.trim().toLowerCase(),name=person(log,value);if(!snapshot.people.some(row=>row.email===email))snapshot.people.push({email,name})}
+      }
+    }
+    const enriched={...log,displaySnapshot:snapshot};
+    const changes=changesFor(log).map(change=>({...change,label:fieldLabel(change),before:valueText(enriched,change,'before'),after:valueText(enriched,change,'after')}));
+    return {displaySnapshot:snapshot,changes,summary:summary(log),beforeSummary:changes.map(change=>change.label+'：'+change.before).join('；'),afterSummary:changes.map(change=>change.label+'：'+change.after).join('；')};
+  }
+  function loadReferences(survey,kind){
+    const key=cacheKey(survey,kind),previous=caches.get(key);
+    if(previous&&(previous.status==='loading'||Date.now()-previous.time<(previous.status==='failed'?15000:60000)))return previous.promise||Promise.resolve();
+    const uid=currentUser?.uid||'',state={status:'loading',rows:[],time:Date.now()};caches.set(key,state);
+    state.promise=(async()=>{
+      try{
+        const result=await col(kind==='dates'?'surveyDates':'restaurants').where('surveyId','==',survey).get();
+        if((currentUser?.uid||'')!==uid)return;
+        state.rows=result.docs.map(doc=>{const data=doc.data();return String(data.surveyId||'')===survey?{id:doc.id,label:String(kind==='dates'?data.label||'':data.name||'')}:null}).filter(Boolean);state.status='ready';
+      }catch(error){state.status='failed';console.warn('操作紀錄參照資料讀取失敗',kind,error)}
+      finally{state.time=Date.now();if((currentUser?.uid||'')!==uid&&caches.get(key)===state)caches.delete(key)}
+    })();
+    return state.promise;
+  }
+  async function hydrate(logs){
+    if(!isSystemAdmin||!currentUser||!db)return;
+    const uid=currentUser.uid;
+    const jobs=new Map();
+    for(const log of logs){const survey=surveyOf(log);if(!survey)continue;for(const [kind,values] of Object.entries(requirements(log)))if(values.size)jobs.set(JSON.stringify([survey,kind]),[survey,kind])}
+    const queue=[...jobs.values()];let cursor=0;
+    await Promise.all(Array.from({length:Math.min(3,queue.length)},async()=>{while(cursor<queue.length&&isSystemAdmin&&currentUser?.uid===uid){const [survey,kind]=queue[cursor++];await loadReferences(survey,kind)}}));
+  }
+  Object.assign(auditFieldLabelsV760,labels);
+  const renderBefore=renderLogsV711;
+  function renderReadable(){
+    renderBefore();
+    document.getElementById('logTable')?.classList?.toggle('auditReadableLogs',document.getElementById('logTypeFilter')?.value!=='login');
+  }
+  renderLogsV711=function(){
+    const generation=++renderGeneration,uid=currentUser?.uid||'';renderReadable();
+    if(!isSystemAdmin||document.getElementById('logTypeFilter')?.value==='login')return;
+    const rows=filteredLogsV711(),size=typeof LOG_PAGE_SIZE_V721==='number'?LOG_PAGE_SIZE_V721:12,page=typeof logPageV721==='number'?logPageV721:1;
+    hydrate(rows.slice((page-1)*size,page*size)).then(()=>{if(generation===renderGeneration&&uid===(currentUser?.uid||'')&&isSystemAdmin&&document.getElementById('logTypeFilter')?.value!=='login')renderReadable()}).catch(error=>console.warn('操作紀錄顯示轉譯失敗',error));
+  };
+  window.renderLogsV711=renderLogsV711;
+  const reloadBefore=reloadLogsV931;
+  reloadLogsV931=function(...args){for(const [key,value] of caches)if(value.status==='failed')caches.delete(key);return reloadBefore(...args)};
+  window.AdminAuditPresentation=Object.freeze({version:VERSION,summary,diff,prepare,hydrate});
+})();
+
+;
+/* admin-activity-members-cc062094.js */
+/* 只補入選定活動，不重建既有名單或修改人員主檔。 */
+(() => {
+  const VERSION='10.62';
+  let busy=false,lastStatus=null,dialogContext=null,returnFocus=null,ownsScrollLock=false;
+  const targets=survey=>new Set((survey?.targetDepartments||[]).map(value=>String(value||'').trim()).filter(Boolean));
+  const roster=(survey,members=D.members)=>Array.isArray(survey?.memberRosterIds)?survey.memberRosterIds.map(String):rosterIdsForMembersV1023(members,survey?.targetDepartments);
+  const memberLabel=member=>[memberDepartmentV1023(member),member?.name,member?.employeeNo||member?.empNo].filter(Boolean).join(' ');
+  function allowed(surveyId){
+    return !!currentUser&&isAdmin&&!!surveyId&&String(activeSurveyId||'')===String(surveyId)&&canManage()&&!document.getElementById('simulateMemberSelectV807')?.value;
+  }
+  function candidates(survey=activeSurvey()){
+    if(!survey)return [];
+    const ids=new Set(roster(survey)),departments=targets(survey);
+    return D.members.filter(member=>member.active!==false&&!ids.has(String(member.id))&&(!departments.size||departments.has(memberDepartmentV1023(member))));
+  }
+  function message(surveyId,uid,text,error=false){lastStatus={surveyId,uid,text,error}}
+  function ensureDialog(){
+    let mask=document.getElementById('activityMemberAddMask');if(mask)return mask;
+    mask=document.createElement('div');mask.id='activityMemberAddMask';mask.className='modalMask activityMemberAddMask';mask.hidden=true;mask.style.display='none';
+    mask.innerHTML='<section class="activityMemberDialog" role="dialog" aria-modal="true" aria-labelledby="activityMemberDialogTitle" aria-describedby="activityMemberDialogActivity" tabindex="-1"><header><div><h2 id="activityMemberDialogTitle">加入人員</h2><p id="activityMemberDialogActivity"></p></div><button id="activityMemberDialogClose" class="activityMemberDialogClose" type="button" aria-label="關閉加入人員視窗">×</button></header><div class="activityMemberDialogBody"><label for="activityMemberSelect">選擇人員</label><select id="activityMemberSelect" aria-describedby="activityMemberHint"></select><p id="activityMemberHint" class="muted">僅列出本活動參與部門的啟用人員；加入後可再調整填寫及預算資格。</p><div id="activityMemberStatus" role="status" aria-live="polite"></div></div><footer><button id="activityMemberDialogCancel" class="btn" type="button">取消</button><button id="activityMemberAddButton" class="btn primary" type="button" disabled>加入名單</button></footer></section>';
+    document.body.appendChild(mask);
+    mask.querySelector('#activityMemberDialogClose').addEventListener('click',()=>close());
+    mask.querySelector('#activityMemberDialogCancel').addEventListener('click',()=>close());
+    mask.querySelector('#activityMemberAddButton').addEventListener('click',()=>add(mask.querySelector('select').value));
+    mask.querySelector('select').addEventListener('change',()=>{mask.querySelector('#activityMemberAddButton').disabled=busy||!mask.querySelector('select').value});
+    mask.addEventListener('click',event=>{if(event.target===mask)close()});
+    return mask;
+  }
+  function close(force=false,restore=true){
+    if(busy&&!force)return false;
+    const mask=document.getElementById('activityMemberAddMask');if(mask){mask.hidden=true;mask.style.display='none'}
+    dialogContext=null;
+    const anotherOpen=[...document.querySelectorAll('.modalMask,.adminDialogMaskV908')].some(node=>node!==mask&&!node.hidden&&getComputedStyle(node).display!=='none');
+    document.body.classList.remove('activityMemberDialogOpen');
+    if(ownsScrollLock&&!anotherOpen)document.body.classList.remove('modalOpen');ownsScrollLock=false;
+    if(restore){const target=returnFocus&&document.contains(returnFocus)?returnFocus:document.getElementById('activityMemberLaunch');if(target&&!target.hidden){if(target.id==='activityMemberLaunch')target.disabled=busy;if(!target.disabled)target.focus()}}
+    returnFocus=null;return true;
+  }
+  function renderDialog(){
+    if(!dialogContext)return;
+    const mask=ensureDialog(),survey=activeSurvey(),choices=candidates(survey),select=mask.querySelector('select'),selected=select.value;
+    const html='<option value="">'+(choices.length?'請選擇要加入的人員':'目前沒有可加入的人員')+'</option>'+choices.map(member=>'<option value="'+escAttr(member.id)+'">'+esc(memberLabel(member))+'</option>').join('');
+    if(select.innerHTML!==html)select.innerHTML=html;
+    select.value=choices.some(member=>String(member.id)===selected)?selected:'';select.disabled=busy||!choices.length;
+    mask.querySelector('#activityMemberDialogActivity').textContent=survey.title||'目前活動';
+    const button=mask.querySelector('#activityMemberAddButton');button.disabled=busy||!select.value;button.textContent=busy?'加入中…':'加入名單';
+    for(const id of ['activityMemberDialogClose','activityMemberDialogCancel'])mask.querySelector('#'+id).disabled=busy;
+    const status=mask.querySelector('#activityMemberStatus'),matching=lastStatus?.surveyId===dialogContext.surveyId&&lastStatus.uid===dialogContext.uid;
+    status.textContent=busy?'正在加入人員，請稍候…':matching?lastStatus.text:'';status.classList.toggle('error',!!(!busy&&matching&&lastStatus.error));
+    if(!busy&&!mask.hidden&&!mask.contains(document.activeElement))(select.disabled?mask.querySelector('#activityMemberDialogCancel'):select).focus();
+  }
+  function render(){
+    const toolbar=document.querySelector('#memP .memberToolbar'),survey=activeSurvey();if(!toolbar)return;
+    let launcher=document.getElementById('activityMemberLaunch');
+    if(!launcher){launcher=document.createElement('button');launcher.id='activityMemberLaunch';launcher.type='button';launcher.className='btn primary';launcher.innerHTML='<span aria-hidden="true">＋</span>加入人員';launcher.setAttribute('aria-haspopup','dialog');launcher.addEventListener('click',open);toolbar.appendChild(launcher)}
+    launcher.hidden=!survey||!allowed(survey.id);launcher.disabled=busy;
+    const inContext=dialogContext&&dialogContext.uid===currentUser?.uid&&dialogContext.surveyId===String(activeSurveyId||'')&&allowed(dialogContext.surveyId)&&document.getElementById('memP')?.classList.contains('active')&&location.hash.startsWith('#manage');
+    if(dialogContext&&!inContext)close(true,false);
+    if(dialogContext)renderDialog();
+    const box=document.getElementById('memTable');if(!box)return;
+    let pageStatus=document.getElementById('activityMemberPageStatus');
+    const show=lastStatus?.text&&lastStatus.surveyId===String(survey?.id||'')&&lastStatus.uid===currentUser?.uid&&!dialogContext;
+    if(show){if(!pageStatus){pageStatus=document.createElement('p');pageStatus.id='activityMemberPageStatus';pageStatus.setAttribute('role','status');pageStatus.setAttribute('aria-live','polite');box.prepend(pageStatus)}pageStatus.textContent=lastStatus.text;pageStatus.classList.toggle('error',lastStatus.error)}else pageStatus?.remove();
+  }
+  function open(){
+    if(busy||!allowed(activeSurveyId)||!document.getElementById('memP')?.classList.contains('active'))return false;
+    returnFocus=document.getElementById('activityMemberLaunch')||document.activeElement;dialogContext={surveyId:String(activeSurveyId),uid:currentUser.uid};lastStatus=null;
+    const mask=ensureDialog();mask.querySelector('select').value='';renderDialog();mask.hidden=false;mask.style.display='flex';
+    ownsScrollLock=!document.body.classList.contains('modalOpen');document.body.classList.add('modalOpen','activityMemberDialogOpen');
+    render();(mask.querySelector('select').disabled?mask.querySelector('#activityMemberDialogCancel'):mask.querySelector('select')).focus();return true;
+  }
+  const renderBefore=renderMemberPanel;
+  renderMemberPanel=function(){
+    renderBefore();render();
+  };
+  window.renderMemberPanel=renderMemberPanel;
+  const accessBefore=applyAccessUI;applyAccessUI=function(){const result=accessBefore.apply(this,arguments);render();return result};window.applyAccessUI=applyAccessUI;
+  const routeBefore=applyRoute;applyRoute=function(){const result=routeBefore.apply(this,arguments);render();return result};window.applyRoute=applyRoute;
+  window.addEventListener('hashchange',render);
+  document.addEventListener('keydown',event=>{
+    if(!dialogContext)return;
+    const confirmation=document.getElementById('adminDialogMaskV908');if(confirmation&&!confirmation.hidden&&getComputedStyle(confirmation).display!=='none')return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return}
+    if(event.key!=='Tab')return;
+    const mask=ensureDialog(),controls=[...mask.querySelectorAll('button:not(:disabled),select:not(:disabled)')].filter(node=>node.getClientRects().length);
+    if(!controls.length){event.preventDefault();mask.querySelector('section').focus();return}
+    const first=controls[0],last=controls.at(-1);
+    if(!controls.includes(document.activeElement)){event.preventDefault();(event.shiftKey?last:first).focus()}
+    else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  });
+  async function add(memberId){
+    const surveyId=String(activeSurveyId||''),uid=currentUser?.uid||'',survey=activeSurvey();
+    if(busy)return false;
+    if(dialogContext&&(dialogContext.uid!==uid||dialogContext.surveyId!==surveyId)){close(true,false);return false}
+    if(!allowed(surveyId)){alert('此帳號沒有加入活動人員的權限');return false}
+    const candidate=candidates(survey).find(member=>String(member.id)===String(memberId));
+    if(!candidate){alert('請選擇本活動尚未加入的啟用人員');return false}
+    busy=true;renderMemberPanel();let committed=false;
+    try{
+      if(survey.archived===true||survey.status==='archived'||survey.status==='closed'){
+        const confirmed=await window.adminConfirmV908('此活動已結案。加入人員會更新本活動名單、應填人數與預算資格，是否繼續？','加入結案活動');
+        if(dialogContext)document.body.classList.add('modalOpen');
+        if(!confirmed)return false;
+      }
+      const guard=()=>{if(currentUser?.uid!==uid||!allowed(surveyId))throw Error('活動或登入身分已變更，請重新選擇後再試')};
+      guard();
+      const surveyRef=doc('surveys',surveyId),memberRef=doc('members',String(memberId)),eligibilityRef=doc('budgetEligibility',surveyId+'__'+memberId),auditRef=col('surveyAuditLogs').doc();
+      const actor={actorUid:uid,actorEmail:String(currentUser.email||'').toLowerCase(),actorName:currentUserDisplayText?.()||currentUser.displayName||currentUser.email||'',actorRole:isSystemAdmin?'系統管理員':'活動管理者'};
+      const result=await db.runTransaction(async transaction=>{
+        guard();
+        const [surveySnap,memberSnap,eligibilitySnap]=await Promise.all([transaction.get(surveyRef),transaction.get(memberRef),transaction.get(eligibilityRef)]);
+        guard();
+        if(!surveySnap.exists)throw Error('找不到這個活動，請重新整理後再試');
+        if(!memberSnap.exists)throw Error('找不到這位人員，請重新整理後再試');
+        const latestSurvey={...surveySnap.data(),id:surveyId},member={...memberSnap.data(),id:String(memberId)},eligibility=eligibilitySnap.exists?eligibilitySnap.data():{};
+        if(latestSurvey.active===false)throw Error('此活動目前不可加入人員');
+        if((latestSurvey.archived===true||latestSurvey.status==='archived'||latestSurvey.status==='closed')&&!(survey.archived===true||survey.status==='archived'||survey.status==='closed'))throw Error('活動已結案，請重新確認後再加入');
+        const departments=targets(latestSurvey);
+        if(member.active===false)throw Error('這位人員已停用，不能加入活動');
+        if(departments.size&&!departments.has(memberDepartmentV1023(member)))throw Error('這位人員不屬於本活動的參與部門');
+        const beforeIds=[...new Set(roster(latestSurvey))];
+        if(beforeIds.includes(String(memberId)))return{already:true,survey:latestSurvey,member,eligibility,ids:beforeIds};
+        const ids=[...beforeIds,String(memberId)],stamp=firebase.firestore.FieldValue.serverTimestamp();
+        const before={memberCount:beforeIds.length,canFill:eligibility.canFill??member.canFill!==false},after={memberCount:ids.length,addedMember:memberLabel(member),canFill:true};
+        const changes=auditChangesV760(before,after,['memberCount','addedMember','canFill']);
+        const audit={surveyId,action:'新增',targetType:'活動名單',targetId:String(memberId),summary:'將「'+memberLabel(member)+'」加入「'+(latestSurvey.title||'活動')+'」名單',before,after,changes,detailVersion:VERSION,...actor,userName:actor.actorName,userEmail:actor.actorEmail,createdAt:stamp};
+        if(window.AdminAuditPresentation)Object.assign(audit,window.AdminAuditPresentation.prepare(audit));
+        // These writes commit together; transaction retries preserve concurrent additions.
+        transaction.set(surveyRef,{memberRosterIds:ids,memberRosterVersion:'v1',memberRosterUpdatedAt:stamp,updatedAt:stamp},{merge:true});
+        transaction.set(eligibilityRef,{surveyId,memberId:String(memberId),canFill:true,updatedAt:stamp},{merge:true});
+        transaction.set(auditRef,audit);
+        return{already:false,survey:latestSurvey,member,eligibility:{...eligibility,surveyId,memberId:String(memberId),canFill:true},ids};
+      });
+      committed=true;
+      if(currentUser?.uid!==uid)return true;
+      const localSurvey=D.surveys.find(item=>String(item.id)===surveyId);
+      if(localSurvey){if(!result.already||Array.isArray(result.survey.memberRosterIds)){localSurvey.memberRosterIds=result.ids;localSurvey.memberRosterVersion='v1'}else delete localSurvey.memberRosterIds}
+      const index=D.members.findIndex(member=>String(member.id)===String(memberId));if(index>=0)D.members[index]={...D.members[index],...result.member};
+      const title=result.survey.title||'活動';
+      if(String(activeSurveyId||'')===surveyId){
+        const eligibilityIndex=D.budgetEligibility.findIndex(item=>String(item.memberId)===String(memberId));
+        if(eligibilityIndex>=0)D.budgetEligibility[eligibilityIndex]={...D.budgetEligibility[eligibilityIndex],...result.eligibility};else if(!result.already)D.budgetEligibility.push(result.eligibility);
+        message(surveyId,uid,result.already?'此人員已在活動名單中，已更新畫面。':'已將「'+memberLabel(result.member)+'」加入本活動。');
+        try{await loadSurveyData({surveyId})}catch(error){console.warn('加入人員已儲存，但重新讀取失敗',error);message(surveyId,uid,'人員已加入並儲存；資料重新讀取失敗，請重新整理確認。',true)}
+        if(currentUser?.uid===uid&&String(activeSurveyId||'')===surveyId){renderFront();renderAdmin()}
+      }else toast('已將人員加入「'+title+'」，目前活動未變更');
+      return true;
+    }catch(error){
+      console.warn('加入活動人員失敗',error);
+      if(currentUser?.uid===uid)message(surveyId,uid,(committed?'人員已完成加入，但畫面更新失敗，請重新整理確認。':'加入未完成，請重新整理確認後再試。')+(error?.message||''),true);
+      return committed;
+    }finally{busy=false;if(committed&&dialogContext?.surveyId===surveyId&&dialogContext.uid===uid)close(true);if(currentUser?.uid===uid&&isAdmin)renderMemberPanel();else if(dialogContext?.uid===uid)close(true,false)}
+  }
+  window.AdminActivityMembers=Object.freeze({version:VERSION,candidates,add,open,close:()=>close(),isOpen:()=>!!dialogContext});
+})();
+
+;
+/* manage-3374f538.js */
+/*
+ * 部門聚餐調查系統管理端正式入口
+ *
+ * 既有正式功能由 compatibility 目錄依固定順序載入；新功能應建立為
+ * 獨立語意模組，不再追加至舊路徑或大型相容核心。
+ */
+(() => {
+const APP_VERSION='10.62';
+  const requiredInterfaces=[
+    'renderAdmin',
+    'renderFinalPanel',
+    'saveFinal',
+    'saveHomeAnnouncementSetting',
+    'openHomeAnnouncementSettings'
+  ];
+
+  window.APP_VERSION=APP_VERSION;
+  window.AdminApp=Object.freeze({
+    version:APP_VERSION,
+    compatibilityVersion:String(window.ADMIN_COMPATIBILITY_VERSION||''),
+    requiredInterfaces:Object.freeze([...requiredInterfaces])
+  });
+
+  const missing=requiredInterfaces.filter(name=>typeof window[name]!=='function');
+  if(!window.AdminLiveResponses||window.AdminLiveResponses.version!==APP_VERSION)missing.push('AdminLiveResponses');
+  if(!window.AdminChatReadingPosition||window.AdminChatReadingPosition.version!==APP_VERSION)missing.push('AdminChatReadingPosition');
+  if(!window.AdminTitleStyles||window.AdminTitleStyles.version!==APP_VERSION)missing.push('AdminTitleStyles');
+  if(!window.AdminViewRole||window.AdminViewRole.version!==APP_VERSION)missing.push('AdminViewRole');
+  if(!window.AdminShareCenter||window.AdminShareCenter.version!==APP_VERSION)missing.push('AdminShareCenter');
+  if(!window.AdminInformationArchitecture||window.AdminInformationArchitecture.version!==APP_VERSION)missing.push('AdminInformationArchitecture');
+  if(!window.AdminEditorModeState||window.AdminEditorModeState.version!==APP_VERSION)missing.push('AdminEditorModeState');
+  if(!window.AdminReimbursement0807052||window.AdminReimbursement0807052.version!==APP_VERSION)missing.push('AdminReimbursement0807052');
+  if(!window.AdminBackToTop||window.AdminBackToTop.version!==APP_VERSION)missing.push('AdminBackToTop');
+  if(!window.AdminDiningAssignments||window.AdminDiningAssignments.version!==APP_VERSION)missing.push('AdminDiningAssignments');
+  if(!window.AdminLoginAudit||window.AdminLoginAudit.version!==APP_VERSION)missing.push('AdminLoginAudit');
+  if(!window.AdminAuditPresentation||window.AdminAuditPresentation.version!==APP_VERSION)missing.push('AdminAuditPresentation');
+  if(!window.AdminActivityMembers||window.AdminActivityMembers.version!==APP_VERSION)missing.push('AdminActivityMembers');
+  if(missing.length){
+    document.documentElement.dataset.adminState='error';
+    document.documentElement.dataset.adminVersion=APP_VERSION;
+    console.error('管理端相容核心載入不完整：'+missing.join('、'));
+    window.dispatchEvent(new CustomEvent('admin:compatibility-error',{detail:{missing}}));
+  }else{
+    document.documentElement.dataset.adminState='ready';
+    document.documentElement.dataset.adminVersion=APP_VERSION;
+    window.dispatchEvent(new CustomEvent('admin:ready',{detail:{version:APP_VERSION}}));
+  }
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
